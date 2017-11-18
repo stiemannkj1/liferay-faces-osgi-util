@@ -13,14 +13,12 @@
  */
 package com.liferay.faces.osgi.util;
 
-import com.liferay.faces.util.logging.Logger;
-import com.liferay.faces.util.logging.LoggerFactory;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Dictionary;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import javax.faces.context.ExternalContext;
 import javax.faces.context.FacesContext;
@@ -39,11 +37,12 @@ import org.osgi.framework.wiring.BundleWiring;
  */
 public final class FacesBundleUtil {
 
-	// Logger
-	private static final Logger logger = LoggerFactory.getLogger(FacesBundleUtil.class);
-
 	// Private Constants
 	private static final boolean FRAMEWORK_UTIL_DETECTED;
+
+	// Package-Private Constants
+	/* package-private */ static final String PRIMEFACES_SYMBOLIC_NAME = "org.primefaces";
+	/* package-private */ static final String MOJARRA_SYMBOLIC_NAME = "org.glassfish.javax.faces";
 
 	static {
 
@@ -58,8 +57,8 @@ public final class FacesBundleUtil {
 
 			if (!((t instanceof NoClassDefFoundError) || (t instanceof ClassNotFoundException))) {
 
-				logger.error("An unexpected error occurred when attempting to detect OSGi:");
-				logger.error(t);
+				System.err.println("An unexpected error occurred when attempting to detect OSGi:");
+				t.printStackTrace(System.err);
 			}
 		}
 
@@ -70,27 +69,21 @@ public final class FacesBundleUtil {
 		throw new AssertionError();
 	}
 
-	public static Bundle getCurrentFacesWab(Object context) {
+	public static Map<String, Bundle> getFacesBundles(Object context) {
 
-		BundleContext bundleContext = (BundleContext) getServletContextAttribute(context, "osgi-bundlecontext");
-
-		return bundleContext.getBundle();
-	}
-
-	public static Set<Bundle> getFacesBundles(Object context) {
-
-		Set<Bundle> facesBundles;
+		Map<String, Bundle> facesBundles;
 
 		if (FRAMEWORK_UTIL_DETECTED) {
 
-			facesBundles = (Set<Bundle>) getServletContextAttribute(context, FacesBundleUtil.class.getName());
+			facesBundles = (Map<String, Bundle>) getServletContextAttribute(context, FacesBundleUtil.class.getName());
 
 			if (facesBundles == null) {
 
-				facesBundles = new HashSet<Bundle>();
+				// LinkedHashMap is used to ensure that the WAB is the first bundle when iterating over all bundles.
+				facesBundles = new LinkedHashMap<String, Bundle>();
 
 				Bundle wabBundle = getCurrentFacesWab(context);
-				facesBundles.add(wabBundle);
+				facesBundles.put("currentFacesWab", wabBundle);
 
 				// If the WAB's dependencies are not contained in the WAB's WEB-INF/lib, find all the WAB's
 				// dependencies and return them as well.
@@ -100,37 +93,30 @@ public final class FacesBundleUtil {
 					addBridgeImplBundles(facesBundles);
 				}
 
-				facesBundles = Collections.unmodifiableSet(facesBundles);
+				facesBundles = Collections.unmodifiableMap(facesBundles);
 				setServletContextAttribute(context, FacesBundleUtil.class.getName(), facesBundles);
 			}
 		}
 		else {
-			facesBundles = Collections.emptySet();
+			facesBundles = Collections.emptyMap();
 		}
 
 		return facesBundles;
 	}
 
-	public static boolean isCurrentBundleThickWab() {
-
-		Bundle bundle = FrameworkUtil.getBundle(FacesBundleUtil.class);
-
-		return isWab(bundle);
+	public static boolean isCurrentWarThinWab() {
+		return FRAMEWORK_UTIL_DETECTED && !isCurrentBundleThickWab();
 	}
 
-	public static boolean isWab(Bundle bundle) {
+	private static void addBridgeImplBundles(Map<String, Bundle> facesBundles) {
 
-		Dictionary<String, String> headers = bundle.getHeaders();
-		String webContextPathHeader = headers.get("Web-ContextPath");
+		Collection<Bundle> bundles = facesBundles.values();
 
-		return webContextPathHeader != null;
-	}
+		for (Bundle bundle : bundles) {
 
-	private static void addBridgeImplBundles(Set<Bundle> facesBundles) {
+			String symbolicName = bundle.getSymbolicName();
 
-		for (Bundle bundle : facesBundles) {
-
-			if (isBridgeBundle(bundle, "api")) {
+			if (isBridgeBundle(symbolicName, "api")) {
 
 				BundleWiring bundleWiring = bundle.adapt(BundleWiring.class);
 				List<BundleWire> bundleWires = bundleWiring.getProvidedWires(BundleRevision.PACKAGE_NAMESPACE);
@@ -140,16 +126,17 @@ public final class FacesBundleUtil {
 				for (BundleWire bundleWire : bundleWires) {
 
 					Bundle bundleDependingOnBridgeAPI = bundleWire.getRequirer().getBundle();
+					symbolicName = bundleDependingOnBridgeAPI.getSymbolicName();
 
-					if (isBridgeBundle(bundleDependingOnBridgeAPI, "impl")) {
+					if (isBridgeBundle(symbolicName, "impl")) {
 
-						facesBundles.add(bundleDependingOnBridgeAPI);
+						facesBundles.put(symbolicName, bundleDependingOnBridgeAPI);
 						addRequiredBundlesRecurse(facesBundles, bundleDependingOnBridgeAPI);
 						addedBridgeImplBundle = true;
 					}
-					else if (isBridgeBundle(bundleDependingOnBridgeAPI, "ext")) {
+					else if (isBridgeBundle(symbolicName, "ext")) {
 
-						facesBundles.add(bundleDependingOnBridgeAPI);
+						facesBundles.put(symbolicName, bundleDependingOnBridgeAPI);
 						addRequiredBundlesRecurse(facesBundles, bundleDependingOnBridgeAPI);
 						addedBridgeExtBundle = true;
 					}
@@ -164,7 +151,7 @@ public final class FacesBundleUtil {
 		}
 	}
 
-	private static void addRequiredBundlesRecurse(Set<Bundle> facesBundles, Bundle bundle) {
+	private static void addRequiredBundlesRecurse(Map<String, Bundle> facesBundles, Bundle bundle) {
 
 		BundleWiring bundleWiring = bundle.adapt(BundleWiring.class);
 		List<BundleWire> bundleWires = bundleWiring.getRequiredWires(BundleRevision.PACKAGE_NAMESPACE);
@@ -173,12 +160,29 @@ public final class FacesBundleUtil {
 
 			bundle = bundleWire.getProvider().getBundle();
 
-			if (!((bundle.getBundleId() == 0) || facesBundles.contains(bundle))) {
+			long bundleId = bundle.getBundleId();
 
-				facesBundles.add(bundle);
+			if (!((bundleId == 0) || facesBundles.containsValue(bundle))) {
+
+				String key = Long.toString(bundleId);
+				String symbolicName = bundle.getSymbolicName();
+
+				if (symbolicName.startsWith("com.liferay.faces") || MOJARRA_SYMBOLIC_NAME.equals(symbolicName) ||
+						PRIMEFACES_SYMBOLIC_NAME.equals(symbolicName)) {
+					key = symbolicName;
+				}
+
+				facesBundles.put(key, bundle);
 				addRequiredBundlesRecurse(facesBundles, bundle);
 			}
 		}
+	}
+
+	private static Bundle getCurrentFacesWab(Object context) {
+
+		BundleContext bundleContext = (BundleContext) getServletContextAttribute(context, "osgi-bundlecontext");
+
+		return bundleContext.getBundle();
 	}
 
 	private static Object getServletContextAttribute(Object context, String servletContextAttributeName) {
@@ -216,11 +220,26 @@ public final class FacesBundleUtil {
 		return servletContextAttributeValue;
 	}
 
-	private static boolean isBridgeBundle(Bundle bundle, String bundleSymbolicNameSuffix) {
+	private static boolean isBridgeBundle(String symbolicName, String bundleSymbolicNameSuffix) {
 
-		String bundleSymbolicName = "com.liferay.faces.bridge." + bundleSymbolicNameSuffix;
+		String bridgeBundleSymbolicName = "com.liferay.faces.bridge." + bundleSymbolicNameSuffix;
 
-		return bundleSymbolicName.equals(bundle.getHeaders().get("Bundle-SymbolicName"));
+		return symbolicName.equals(bridgeBundleSymbolicName);
+	}
+
+	private static boolean isCurrentBundleThickWab() {
+
+		Bundle bundle = FrameworkUtil.getBundle(FacesBundleUtil.class);
+
+		return isWab(bundle);
+	}
+
+	private static boolean isWab(Bundle bundle) {
+
+		Dictionary<String, String> headers = bundle.getHeaders();
+		String webContextPathHeader = headers.get("Web-ContextPath");
+
+		return webContextPathHeader != null;
 	}
 
 	private static void setServletContextAttribute(Object context, String servletContextAttributeName,

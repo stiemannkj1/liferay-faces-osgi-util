@@ -14,7 +14,8 @@
 package com.liferay.faces.osgi.util;
 
 import java.net.URL;
-import java.util.Set;
+import java.util.Collection;
+import java.util.Map;
 
 import javax.faces.context.FacesContext;
 
@@ -40,38 +41,82 @@ public class OSGiClassProvider {
 		return getClass(name, null, suggestedLoader);
 	}
 
-	private static Class<?> getClass(String name, Boolean initialize, ClassLoader suggestedClassLoader)
+	private static Class<?> getClass(String className, Boolean initialize, ClassLoader suggestedClassLoader)
 		throws ClassNotFoundException {
 
 		Class<?> clazz = null;
-		FacesContext facesContext = FacesContext.getCurrentInstance();
 
-		if ((facesContext != null) && !FacesBundleUtil.isCurrentBundleThickWab()) {
+		if (FacesBundleUtil.isCurrentWarThinWab()) {
 
-			Set<Bundle> facesBundles = FacesBundleUtil.getFacesBundles(facesContext);
+			FacesContext facesContext = FacesContext.getCurrentInstance();
 
-			for (Bundle bundle : facesBundles) {
+			if (facesContext != null) {
 
-				if (!isClassFileInBundle(name, bundle)) {
-					continue;
+				Map<String, Bundle> facesBundles = FacesBundleUtil.getFacesBundles(facesContext);
+
+				if (className.startsWith("com.sun.faces") || className.startsWith("javax.faces")) {
+
+					Bundle bundle = facesBundles.get(FacesBundleUtil.MOJARRA_SYMBOLIC_NAME);
+					clazz = getClass(className, initialize, bundle);
+				}
+				else if (className.startsWith("com.liferay.faces.util")) {
+
+					Bundle bundle = facesBundles.get("com.liferay.faces.util");
+					clazz = getClass(className, initialize, bundle);
+				}
+				else if (className.startsWith("javax.portlet.faces")) {
+
+					Bundle bundle = facesBundles.get("com.liferay.faces.bridge.api");
+					clazz = getClass(className, initialize, bundle);
+				}
+				else if (className.startsWith("com.liferay.faces.bridge.ext")) {
+
+					Bundle bundle = facesBundles.get("com.liferay.faces.bridge.ext");
+					clazz = getClass(className, initialize, bundle);
+				}
+				else if (className.startsWith("com.liferay.faces.bridge") ||
+						className.startsWith("com.liferay.faces.portlet")) {
+
+					if (!className.contains(".internal.")) {
+
+						Bundle bundle = facesBundles.get("com.liferay.faces.bridge.api");
+						clazz = getClass(className, initialize, bundle);
+					}
+
+					if (clazz == null) {
+
+						Bundle bundle = facesBundles.get("com.liferay.faces.bridge.impl");
+						clazz = getClass(className, initialize, bundle);
+					}
 				}
 
-				BundleWiring bundleWiring = bundle.adapt(BundleWiring.class);
-				ClassLoader classLoader = bundleWiring.getClassLoader();
+//              else if (className.startsWith("com.liferay.faces.alloy")) {
+//
+//                  Bundle bundle = facesBundles.get("com.liferay.faces.alloy");
+//                  clazz = getClass(className, initialize, bundle);
+//              }
+//              else if (className.startsWith(FacesBundleUtil.PRIMEFACES_SYMBOLIC_NAME)) {
+//
+//                  Bundle bundle = facesBundles.get(FacesBundleUtil.PRIMEFACES_SYMBOLIC_NAME);
+//                  clazz = getClass(className, initialize, bundle);
+//              }
 
-				try {
+				if (clazz == null) {
 
-					if (initialize != null) {
-						clazz = Class.forName(name, initialize, classLoader);
+					Collection<Bundle> bundles = facesBundles.values();
+
+					for (Bundle bundle : bundles) {
+
+						if (!isClassFileInBundle(className, bundle)) {
+							continue;
+						}
+
+						clazz = getClass(className, initialize, bundle);
+
+						if (clazz != null) {
+							break;
+						}
 					}
-					else {
-						clazz = classLoader.loadClass(name);
-					}
-
-					break;
-				}
-				catch (ClassNotFoundException e) {
-					// no-op
 				}
 			}
 		}
@@ -79,11 +124,33 @@ public class OSGiClassProvider {
 		if (clazz == null) {
 
 			if (initialize != null) {
-				clazz = Class.forName(name, initialize, suggestedClassLoader);
+				clazz = Class.forName(className, initialize, suggestedClassLoader);
 			}
 			else {
-				clazz = suggestedClassLoader.loadClass(name);
+				clazz = suggestedClassLoader.loadClass(className);
 			}
+		}
+
+		return clazz;
+	}
+
+	private static Class<?> getClass(String name, Boolean initialize, Bundle bundle) {
+
+		Class<?> clazz = null;
+		BundleWiring bundleWiring = bundle.adapt(BundleWiring.class);
+		ClassLoader classLoader = bundleWiring.getClassLoader();
+
+		try {
+
+			if (initialize != null) {
+				clazz = Class.forName(name, initialize, classLoader);
+			}
+			else {
+				clazz = classLoader.loadClass(name);
+			}
+		}
+		catch (ClassNotFoundException e) {
+			// no-op
 		}
 
 		return clazz;

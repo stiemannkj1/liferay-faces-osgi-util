@@ -279,11 +279,6 @@
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
-			<groupId>com.liferay.faces</groupId>
-			<artifactId>com.liferay.faces.util</artifactId>
-			<version>3.1.0</version>
-		</dependency>
-		<dependency>
 			<groupId>javax.el</groupId>
 			<artifactId>javax.el-api</artifactId>
 			<version>2.2.1</version>
