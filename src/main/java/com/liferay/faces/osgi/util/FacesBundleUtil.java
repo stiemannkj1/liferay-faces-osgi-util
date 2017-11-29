@@ -69,7 +69,33 @@ public final class FacesBundleUtil {
 		throw new AssertionError();
 	}
 
-	public static Map<String, Bundle> getFacesBundles(Object context) {
+	public static Collection<Bundle> getFacesBundles(ServletContext servletContext) {
+
+		if (servletContext == null) {
+			throw new NullPointerException("ServletContext is null, so FacesBundles cannot be obtained.");
+		}
+
+		Map<String, Bundle> facesBundles = getFacesBundlesUsingServletContext(servletContext);
+
+		return facesBundles.values();
+	}
+
+	public static Collection<Bundle> getFacesBundles(FacesContext facesContext) {
+
+		if (facesContext == null) {
+			throw new NullPointerException("FacesContext is null, so FacesBundles cannot be obtained.");
+		}
+
+		Map<String, Bundle> facesBundles = getFacesBundlesUsingServletContext(facesContext);
+
+		return facesBundles.values();
+	}
+
+	public static boolean isCurrentWarThinWab() {
+		return FRAMEWORK_UTIL_DETECTED && !isCurrentBundleThickWab();
+	}
+
+	/* package-private */ static Map<String, Bundle> getFacesBundlesUsingServletContext(Object context) {
 
 		Map<String, Bundle> facesBundles;
 
@@ -102,10 +128,6 @@ public final class FacesBundleUtil {
 		}
 
 		return facesBundles;
-	}
-
-	public static boolean isCurrentWarThinWab() {
-		return FRAMEWORK_UTIL_DETECTED && !isCurrentBundleThickWab();
 	}
 
 	private static void addBridgeImplBundles(Map<String, Bundle> facesBundles) {
@@ -212,7 +234,14 @@ public final class FacesBundleUtil {
 			servletContextAttributeValue = servletContext.getAttribute(servletContextAttributeName);
 		}
 		else {
-			throw new IllegalArgumentException("context [" + context.getClass().getName() + "] is not an instanceof " +
+
+			String contextClassName = "null";
+
+			if (context != null) {
+				contextClassName = context.getClass().getName();
+			}
+
+			throw new IllegalArgumentException("context [" + contextClassName + "] is not an instanceof " +
 				FacesContext.class.getName() + " or " + ExternalContext.class.getName() + " or " +
 				ServletContext.class.getName());
 		}
