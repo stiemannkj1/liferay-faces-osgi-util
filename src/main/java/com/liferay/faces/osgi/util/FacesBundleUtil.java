@@ -97,7 +97,7 @@ public final class FacesBundleUtil {
 
 	/* package-private */ static Map<String, Bundle> getFacesBundlesUsingServletContext(Object context) {
 
-		Map<String, Bundle> facesBundles;
+		Map<String, Bundle> facesBundles = null;
 
 		if (FRAMEWORK_UTIL_DETECTED) {
 
@@ -105,25 +105,29 @@ public final class FacesBundleUtil {
 
 			if (facesBundles == null) {
 
-				// LinkedHashMap is used to ensure that the WAB is the first bundle when iterating over all bundles.
-				facesBundles = new LinkedHashMap<String, Bundle>();
-
 				Bundle wabBundle = getCurrentFacesWab(context);
-				facesBundles.put("currentFacesWab", wabBundle);
 
-				// If the WAB's dependencies are not contained in the WAB's WEB-INF/lib, find all the WAB's
-				// dependencies and return them as well.
-				if (!FacesBundleUtil.isCurrentBundleThickWab()) {
+				if (wabBundle != null) {
 
-					addRequiredBundlesRecurse(facesBundles, wabBundle);
-					addBridgeImplBundles(facesBundles);
+					// LinkedHashMap is used to ensure that the WAB is the first bundle when iterating over all bundles.
+					facesBundles = new LinkedHashMap<String, Bundle>();
+					facesBundles.put("currentFacesWab", wabBundle);
+
+					// If the WAB's dependencies are not contained in the WAB's WEB-INF/lib, find all the WAB's
+					// dependencies and return them as well.
+					if (!FacesBundleUtil.isCurrentBundleThickWab()) {
+
+						addRequiredBundlesRecurse(facesBundles, wabBundle);
+						addBridgeImplBundles(facesBundles);
+					}
+
+					facesBundles = Collections.unmodifiableMap(facesBundles);
+					setServletContextAttribute(context, FacesBundleUtil.class.getName(), facesBundles);
 				}
-
-				facesBundles = Collections.unmodifiableMap(facesBundles);
-				setServletContextAttribute(context, FacesBundleUtil.class.getName(), facesBundles);
 			}
 		}
-		else {
+
+		if (facesBundles == null) {
 			facesBundles = Collections.emptyMap();
 		}
 
@@ -203,8 +207,16 @@ public final class FacesBundleUtil {
 	private static Bundle getCurrentFacesWab(Object context) {
 
 		BundleContext bundleContext = (BundleContext) getServletContextAttribute(context, "osgi-bundlecontext");
+		Bundle bundle;
 
-		return bundleContext.getBundle();
+		try {
+			bundle = bundleContext.getBundle();
+		}
+		catch (IllegalStateException e) {
+			bundle = null;
+		}
+
+		return bundle;
 	}
 
 	private static Object getServletContextAttribute(Object context, String servletContextAttributeName) {
